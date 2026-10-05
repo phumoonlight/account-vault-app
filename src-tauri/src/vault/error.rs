@@ -16,7 +16,7 @@ pub enum VaultError {
     Keyring(String),
     #[error("PIN must be 4 to 6 digits")]
     InvalidPin,
-    #[error("not an Account Vault backup file")]
+    #[error("not a Homemade Account Vault backup file")]
     NotABackup,
     #[error("incorrect PIN, or the backup file is damaged")]
     WrongPin,

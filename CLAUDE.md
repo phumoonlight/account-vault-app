@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Account Vault: a desktop app that stores account credentials (title, username, password, URL, notes, custom fields) in an encrypted local vault, with PIN-protected backup export/import.
+Homemade Account Vault: a desktop app that stores account credentials (title, username, password, URL, notes, custom fields) in an encrypted local vault, with PIN-protected backup export/import.
 
 Stack: **Tauri 2** (Rust backend in `src-tauri/`) + **React 19 / TypeScript / Vite** (frontend in `src/`). Windows is the primary target.
 
@@ -18,6 +18,12 @@ cargo fmt                  # run before committing
 ```
 
 If `cargo` isn't found in a terminal opened before Rust was installed, it's a stale PATH (`~/.cargo/bin`); restart VS Code.
+
+## Versioning
+
+- **Bump the version in every commit that changes the app**, as part of that commit. Run `npm run bump` (patch) for fixes and small changes, `npm run bump minor` for new features, and `npm run bump major` for breaking changes, such as a vault/backup format that older versions can't read.
+- `package.json` is the single source of truth. `tauri.conf.json` reads it (`"version": "../package.json"`), and the script syncs `package-lock.json`, `Cargo.toml` and `Cargo.lock`. Don't edit versions by hand.
+- Docs-only or tooling-only commits don't need a bump.
 
 ## Architecture
 

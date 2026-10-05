@@ -22,7 +22,7 @@ type Dialog =
   /** Window close was blocked because something copied is still on the clipboard. */
   | { kind: "close"; secret: boolean };
 
-const BACKUP_FILTER = { name: "Account Vault backup", extensions: ["avbackup"] };
+const BACKUP_FILTER = { name: "Homemade Account Vault backup", extensions: ["avbackup"] };
 const plural = (n: number) => `${n} ${n === 1 ? "entry" : "entries"}`;
 
 function matches(e: EntrySummary, query: string, tag: string | null) {
@@ -262,7 +262,7 @@ export default function App() {
       )}
       {dialog?.kind === "close" && (
         <ConfirmDialog
-          title="Close Account Vault?"
+          title="Close Homemade Account Vault?"
           message={
             dialog.secret
               ? "A password you copied is still on the clipboard. Closing the app clears it, so you won't be able to paste it anymore."
