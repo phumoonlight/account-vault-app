@@ -24,6 +24,16 @@ export function EntryView({ entry, onEdit, onDelete }: Props) {
         </div>
       </header>
 
+      {entry.tags.length > 0 && (
+        <div className="tag-row">
+          {entry.tags.map((t) => (
+            <span className="tag" key={t}>
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
       <dl className="fields">
         <Field label="Username" value={entry.username} />
         <Field label="Password" value={entry.password} secret />

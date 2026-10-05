@@ -466,6 +466,152 @@ button.text-danger:hover:not(:disabled) {
   color: #fff;
 }
 
+/* ---------- Tags ---------- */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -8px 0 16px;
+}
+
+.tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.tag-input:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.tag-input input {
+  flex: 1;
+  min-width: 100px;
+  padding: 2px;
+  border: none;
+  background: none;
+}
+
+.tag-input input:focus {
+  outline: none;
+}
+
+.tag-remove {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.tag-remove:hover:not(:disabled) {
+  background: none;
+  opacity: 0.7;
+}
+
+.tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 88px;
+  padding: 8px 12px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.tag-chip {
+  padding: 1px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.tag-chip.active,
+.tag-chip.active:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.tag-count {
+  opacity: 0.6;
+}
+
+/* ---------- Password strength ---------- */
+
+.strength {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.strength-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.strength-bar span {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+
+.strength-0 .on,
+.strength-1 .on {
+  background: var(--danger);
+}
+
+.strength-2 .on {
+  background: var(--star);
+}
+
+.strength-3 .on,
+.strength-4 .on {
+  background: var(--success);
+}
+
+.strength-text {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.strength-0 strong,
+.strength-1 strong {
+  color: var(--danger);
+}
+
+.strength-2 strong {
+  color: var(--star);
+}
+
+.strength-3 strong,
+.strength-4 strong {
+  color: var(--success);
+}
+
 /* ---------- PIN dialog ---------- */
 
 .footer-actions {

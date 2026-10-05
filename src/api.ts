@@ -16,6 +16,7 @@ export interface EntryInput {
   notes: string;
   customFields: CustomField[];
   favorite: boolean;
+  tags: string[];
 }
 
 export interface Entry extends EntryInput {
@@ -30,6 +31,7 @@ export interface EntrySummary {
   username: string;
   url: string;
   favorite: boolean;
+  tags: string[];
   updatedAt: number;
 }
 
@@ -61,5 +63,6 @@ export function emptyInput(): EntryInput {
     notes: "",
     customFields: [],
     favorite: false,
+    tags: [],
   };
 }

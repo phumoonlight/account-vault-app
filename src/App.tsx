@@ -5,6 +5,7 @@ import { EntryList } from "./components/EntryList";
 import { EntryView } from "./components/EntryView";
 import { EntryForm } from "./components/EntryForm";
 import { PinDialog } from "./components/PinDialog";
+import { collectTags, sameTag } from "./tags";
 import "./App.css";
 
 type Pane =
@@ -18,15 +19,17 @@ type Dialog = { kind: "export" } | { kind: "import"; path: string };
 const BACKUP_FILTER = { name: "Account Vault backup", extensions: ["avbackup"] };
 const plural = (n: number) => `${n} ${n === 1 ? "entry" : "entries"}`;
 
-function matches(e: EntrySummary, query: string) {
+function matches(e: EntrySummary, query: string, tag: string | null) {
+  if (tag && !e.tags.some((t) => sameTag(t, tag))) return false;
   const q = query.trim().toLowerCase();
-  return !q || [e.title, e.username, e.url].some((s) => s.toLowerCase().includes(q));
+  return !q || [e.title, e.username, e.url, ...e.tags].some((s) => s.toLowerCase().includes(q));
 }
 
 export default function App() {
   const [entries, setEntries] = useState<EntrySummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
+  const [activeTag, setActiveTag] = useState<string | null>(null);
   const [pane, setPane] = useState<Pane>({ kind: "empty" });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -54,16 +57,23 @@ export default function App() {
     refresh();
   }, [refresh]);
 
+  const tags = useMemo(() => collectTags(entries), [entries]);
+
+  // Drop the tag filter once no entry has that tag any more.
+  useEffect(() => {
+    if (activeTag && !tags.some((t) => sameTag(t.tag, activeTag))) setActiveTag(null);
+  }, [tags, activeTag]);
+
   const visible = useMemo(
     () =>
       entries
-        .filter((e) => matches(e, query))
+        .filter((e) => matches(e, query, activeTag))
         .sort(
           (a, b) =>
             Number(b.favorite) - Number(a.favorite) ||
             a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),
         ),
-    [entries, query],
+    [entries, query, activeTag],
   );
 
   async function select(id: string) {
@@ -137,6 +147,29 @@ export default function App() {
             + New
           </button>
         </div>
+        {tags.length > 0 && (
+          <div className="tag-filter" role="toolbar" aria-label="Filter by tag">
+            <button
+              className={`tag-chip${activeTag === null ? " active" : ""}`}
+              onClick={() => setActiveTag(null)}
+            >
+              All
+            </button>
+            {tags.map(({ tag, count }) => {
+              const active = activeTag !== null && sameTag(activeTag, tag);
+              return (
+                <button
+                  key={tag}
+                  className={`tag-chip${active ? " active" : ""}`}
+                  aria-pressed={active}
+                  onClick={() => setActiveTag(active ? null : tag)}
+                >
+                  {tag} <span className="tag-count">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         {loaded && <EntryList entries={visible} selectedId={selectedId} onSelect={select} />}
         <footer className="sidebar-footer">
           <span>
@@ -184,6 +217,7 @@ export default function App() {
             key={pane.kind === "edit" ? pane.entry.id : "new"}
             initial={pane.kind === "edit" ? pane.entry : undefined}
             onSave={save}
+            allTags={tags.map((t) => t.tag)}
             onCancel={() =>
               setPane(pane.kind === "edit" ? { kind: "view", entry: pane.entry } : { kind: "empty" })
             }

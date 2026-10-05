@@ -9,8 +9,12 @@ src/                         React UI
   App.tsx                    layout, app state (Pane: empty|view|edit|new), Import/Export dialogs
   api.ts                     typed wrappers around invoke(); TS types mirror Rust model (camelCase)
   password.ts                password generator (crypto.getRandomValues, rejection sampling)
+  strength.ts                password strength estimate (entropy + pattern/common-password checks, no deps)
+  tags.ts                    tag normalization (mirrors Rust normalize_tags) and tag counts for the filter
   components/
     EntryList / EntryView / EntryForm
+    TagInput.tsx             chip input with autocomplete from existing tags
+    StrengthMeter.tsx        4-segment bar + tip under the password field
     HoldButton.tsx           press-and-hold confirm (pointer + Space/Enter); used for delete
     PinDialog.tsx            4-6 digit PIN modal; onSubmit throws -> error shown inline, retry
 src-tauri/src/

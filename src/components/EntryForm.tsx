@@ -1,15 +1,19 @@
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import { emptyInput, type CustomField, type Entry, type EntryInput } from "../api";
 import { generatePassword } from "../password";
+import { StrengthMeter } from "./StrengthMeter";
+import { TagInput } from "./TagInput";
 
 interface Props {
   /** Entry being edited, or undefined when creating a new one. */
   initial?: Entry;
   onSave: (input: EntryInput) => Promise<void>;
   onCancel: () => void;
+  /** Tags already used in the vault, for autocomplete. */
+  allTags: string[];
 }
 
-export function EntryForm({ initial, onSave, onCancel }: Props) {
+export function EntryForm({ initial, onSave, onCancel, allTags }: Props) {
   const [form, setForm] = useState<EntryInput>(() =>
     initial
       ? {
@@ -20,10 +24,12 @@ export function EntryForm({ initial, onSave, onCancel }: Props) {
           notes: initial.notes,
           customFields: initial.customFields.map((f) => ({ ...f })),
           favorite: initial.favorite,
+          tags: [...initial.tags],
         }
       : emptyInput(),
   );
   const [showPassword, setShowPassword] = useState(false);
+  const tagInputId = useId();
   const [saving, setSaving] = useState(false);
 
   const set = <K extends keyof EntryInput>(key: K, value: EntryInput[K]) =>
@@ -105,6 +111,7 @@ export function EntryForm({ initial, onSave, onCancel }: Props) {
               Generate
             </button>
           </div>
+          <StrengthMeter password={form.password} />
         </label>
         <label>
           Website
@@ -113,6 +120,10 @@ export function EntryForm({ initial, onSave, onCancel }: Props) {
             onChange={(e) => set("url", e.target.value)}
             placeholder="https://"
           />
+        </label>
+        <label htmlFor={tagInputId}>
+          Tags
+          <TagInput id={tagInputId} value={form.tags} onChange={(tags) => set("tags", tags)} suggestions={allTags} />
         </label>
         <label>
           Notes
