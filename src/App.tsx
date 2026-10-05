@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { api, type Entry, type EntryInput, type EntrySummary } from "./api";
 import { EntryList } from "./components/EntryList";
 import { EntryView } from "./components/EntryView";
 import { EntryForm } from "./components/EntryForm";
 import { PinDialog } from "./components/PinDialog";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { collectTags, sameTag } from "./tags";
 import "./App.css";
 
@@ -14,7 +16,11 @@ type Pane =
   | { kind: "edit"; entry: Entry }
   | { kind: "new" };
 
-type Dialog = { kind: "export" } | { kind: "import"; path: string };
+type Dialog =
+  | { kind: "export" }
+  | { kind: "import"; path: string }
+  /** Window close was blocked because something copied is still on the clipboard. */
+  | { kind: "close"; secret: boolean };
 
 const BACKUP_FILTER = { name: "Account Vault backup", extensions: ["avbackup"] };
 const plural = (n: number) => `${n} ${n === 1 ? "entry" : "entries"}`;
@@ -56,6 +62,16 @@ export default function App() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // The backend blocks the window close and asks us to confirm it.
+  useEffect(() => {
+    const unlisten = listen<{ secret: boolean }>("close-requested", (e) =>
+      setDialog({ kind: "close", secret: e.payload.secret }),
+    );
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+  }, []);
 
   const tags = useMemo(() => collectTags(entries), [entries]);
 
@@ -242,6 +258,23 @@ export default function App() {
           confirm
           onSubmit={exportBackup}
           onCancel={closeDialog}
+        />
+      )}
+      {dialog?.kind === "close" && (
+        <ConfirmDialog
+          title="Close Account Vault?"
+          message={
+            dialog.secret
+              ? "A password you copied is still on the clipboard. Closing the app clears it, so you won't be able to paste it anymore."
+              : "Something you copied from this app is still on the clipboard. Closing the app clears it, so you won't be able to paste it anymore."
+          }
+          cancelLabel="Keep open"
+          confirmLabel="Clear clipboard & close"
+          onConfirm={() => run(api.closeApp)}
+          onCancel={() => {
+            setDialog(null);
+            run(api.cancelClose);
+          }}
         />
       )}
       {dialog?.kind === "import" && (

@@ -10,6 +10,7 @@ use std::{
 use tauri::State;
 use zeroize::Zeroizing;
 
+use crate::clipboard::ClipboardGuard;
 use crate::vault::{
     backup,
     keystore::OsKeyStore,
@@ -69,6 +70,37 @@ pub fn update_entry(id: String, input: EntryInput, state: State<'_, AppState>) -
 #[tauri::command]
 pub fn delete_entry(id: String, state: State<'_, AppState>) -> Result<()> {
     state.with_vault(|v| v.delete_entry(&id))
+}
+
+/// Copies `text`; for a secret, returns the seconds until it's cleared again.
+#[tauri::command]
+pub fn copy_to_clipboard(
+    text: String,
+    secret: bool,
+    clipboard: State<'_, ClipboardGuard>,
+) -> Result<Option<u64>> {
+    let text = Zeroizing::new(text);
+    clipboard
+        .copy(&text, secret)
+        .map(|delay| delay.map(|d| d.as_secs()))
+        .map_err(VaultError::Clipboard)
+}
+
+/// True while the "close app?" warning is showing.
+#[derive(Default)]
+pub struct CloseWarning(pub std::sync::atomic::AtomicBool);
+
+/// The user chose "Keep open": warn again on the next close.
+#[tauri::command]
+pub fn cancel_close(warning: State<'_, CloseWarning>) {
+    warning.0.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Closes the window after the user confirmed the close warning. `destroy`
+/// skips `CloseRequested`, and the exit handler then clears the clipboard.
+#[tauri::command]
+pub fn close_app(window: tauri::Window) -> std::result::Result<(), String> {
+    window.destroy().map_err(|e| e.to_string())
 }
 
 // ---------- Export / import ----------

@@ -19,6 +19,7 @@ src/                         React UI
     PinDialog.tsx            4-6 digit PIN modal; onSubmit throws -> error shown inline, retry
 src-tauri/src/
   lib.rs                     plugin setup, builds AppState (vault path + key store), registers commands
+  clipboard.rs               ClipboardGuard: copy, auto-clear secrets after 30 s, clear any copy on exit (only if still ours)
   commands.rs                #[tauri::command] fns; defines AppState { vault_path, keys, Mutex<Option<Vault>> }
   vault/
     mod.rs                   Vault: open/create, CRUD, import_entries, crash-safe save(); tests
@@ -39,6 +40,7 @@ src-tauri/src/
 - `save()` writes a temp file, calls `sync_all()`, then renames. Don't drop the fsync; without it a power loss can leave an empty vault.
 - Mutations go through `Vault::mutate`, which rolls back in-memory data if saving fails.
 - Backup PIN: digits only, 4-6 (validated in the frontend **and** `backup::is_valid_pin`). Argon2id is 256 MiB / t=12 / p=4 (~1.1 s) because a PIN has ≤10^6 values. Don't lower it without reason. KDF params are stored in the file header and capped on read (`is_reasonable`) so crafted files can't exhaust memory.
+- Copy goes through the `copy_to_clipboard` command (not `navigator.clipboard`). Secrets are cleared after `CLEAR_AFTER` (30 s); anything copied is cleared on `RunEvent::Exit`; both only if the clipboard still holds exactly what we copied. Closing the window while our copy is still on the clipboard is blocked (`CloseRequested` → `close-requested` event → `ConfirmDialog` → `close_app`/`cancel_close`); a second close while the warning is pending goes through, so a broken UI can't trap the window. Windows clipboard history (Win+V) is **not** excluded yet.
 - CSP in `tauri.conf.json` is strict; capabilities are `core:default`, `opener:default`, `dialog:default`.
 - Import refuses files over 50 MB and skips duplicates (`Entry::same_login`: title + username + password + url), assigning fresh ids.
 

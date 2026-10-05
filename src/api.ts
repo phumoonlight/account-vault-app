@@ -49,6 +49,13 @@ export const api = {
   updateEntry: (id: string, input: EntryInput) => invoke<Entry>("update_entry", { id, input }),
   deleteEntry: (id: string) => invoke<void>("delete_entry", { id }),
   /** Returns the number of entries exported. */
+  /** For a secret, returns the seconds until the clipboard is cleared again. */
+  copyToClipboard: (text: string, secret: boolean) =>
+    invoke<number | null>("copy_to_clipboard", { text, secret }),
+  /** Closes the app after the user confirmed the close warning. */
+  closeApp: () => invoke<void>("close_app"),
+  /** The user dismissed the close warning; warn again next time. */
+  cancelClose: () => invoke<void>("cancel_close"),
   exportBackup: (path: string, pin: string) => invoke<number>("export_backup", { path, pin }),
   importBackup: (path: string, pin: string) =>
     invoke<ImportSummary>("import_backup", { path, pin }),

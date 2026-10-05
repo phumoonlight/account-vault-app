@@ -22,6 +22,8 @@ pub enum VaultError {
     WrongPin,
     #[error("file is too large to import")]
     FileTooLarge,
+    #[error("couldn't use the clipboard: {0}")]
+    Clipboard(String),
     #[error("entry not found")]
     EntryNotFound,
     #[error("encryption failed")]

@@ -37,6 +37,6 @@ See [docs/architecture.md](docs/architecture.md) for the code layout, the **secu
 
 ## Known gaps / ideas not yet done
 
-- Clipboard isn't auto-cleared after copying a password.
+- Copied secrets still land in Windows clipboard history (Win+V); excluding them needs the Windows clipboard-format flags.
 - No unsaved-changes guard when leaving the edit form.
 - CSV import/export was removed on purpose (the owner wants only PIN-protected backups).
