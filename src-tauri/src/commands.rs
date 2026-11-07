@@ -14,7 +14,7 @@ use crate::clipboard::ClipboardGuard;
 use crate::vault::{
     backup,
     keystore::OsKeyStore,
-    model::{Entry, EntryInput, EntrySummary, VaultData},
+    model::{Entry, EntryInput, EntrySummary, Folder, VaultData},
     ImportSummary, Result, Vault, VaultError,
 };
 
@@ -72,6 +72,31 @@ pub fn delete_entry(id: String, state: State<'_, AppState>) -> Result<()> {
     state.with_vault(|v| v.delete_entry(&id))
 }
 
+#[tauri::command]
+pub fn move_entry(id: String, folder_id: Option<String>, state: State<'_, AppState>) -> Result<()> {
+    state.with_vault(|v| v.move_entry(&id, folder_id.as_deref()))
+}
+
+#[tauri::command]
+pub fn list_folders(state: State<'_, AppState>) -> Result<Vec<Folder>> {
+    state.with_vault(|v| Ok(v.folders().to_vec()))
+}
+
+#[tauri::command]
+pub fn add_folder(name: String, state: State<'_, AppState>) -> Result<Folder> {
+    state.with_vault(|v| v.add_folder(&name))
+}
+
+#[tauri::command]
+pub fn rename_folder(id: String, name: String, state: State<'_, AppState>) -> Result<Folder> {
+    state.with_vault(|v| v.rename_folder(&id, &name))
+}
+
+#[tauri::command]
+pub fn delete_folder(id: String, state: State<'_, AppState>) -> Result<()> {
+    state.with_vault(|v| v.delete_folder(&id))
+}
+
 /// Copies `text`; for a secret, returns the seconds until it's cleared again.
 #[tauri::command]
 pub fn copy_to_clipboard(
@@ -120,6 +145,7 @@ pub async fn export_backup(
     let data = state.with_vault(|v| {
         Ok(VaultData {
             entries: v.entries().to_vec(),
+            folders: v.folders().to_vec(),
         })
     })?;
     let file = backup::encrypt(&data, &pin, backup::KdfParams::DEFAULT)?;
@@ -136,7 +162,8 @@ pub async fn import_backup(
     let pin = Zeroizing::new(pin);
     let mut data = backup::decrypt(&read_import_file(&path)?, &pin)?;
     let entries = std::mem::take(&mut data.entries);
-    state.with_vault(|v| v.import_entries(entries))
+    let folders = std::mem::take(&mut data.folders);
+    state.with_vault(|v| v.import_entries(entries, folders))
 }
 
 fn read_import_file(path: &Path) -> Result<Vec<u8>> {

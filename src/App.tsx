@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { api, type Entry, type EntryInput, type EntryKind, type EntrySummary } from "./api";
+import {
+  api,
+  type Entry,
+  type EntryInput,
+  type EntryKind,
+  type EntrySummary,
+  type Folder,
+} from "./api";
 import { EntryList } from "./components/EntryList";
 import { EntryView } from "./components/EntryView";
 import { EntryForm } from "./components/EntryForm";
 import { PinDialog } from "./components/PinDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { NewMenu } from "./components/NewMenu";
+import { FolderDialog } from "./components/FolderDialog";
 import { collectTags, sameTag } from "./tags";
 import "./App.css";
 
@@ -21,10 +29,29 @@ type Dialog =
   | { kind: "export" }
   | { kind: "import"; path: string }
   /** Window close was blocked because something copied is still on the clipboard. */
-  | { kind: "close"; secret: boolean };
+  | { kind: "close"; secret: boolean }
+  /** Create a folder, or rename `folder`. */
+  | { kind: "folder"; folder?: Folder }
+  | { kind: "deleteFolder"; folder: Folder };
 
 const BACKUP_FILTER = { name: "Homemade Account Vault backup", extensions: ["avbackup"] };
 const plural = (n: number) => `${n} ${n === 1 ? "entry" : "entries"}`;
+/** localStorage key for collapsed folder ids; a per-device view preference. */
+const COLLAPSED_KEY = "collapsedFolders";
+
+function loadCollapsed(): Set<string> {
+  try {
+    const ids: unknown = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]");
+    return new Set(Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function deleteFolderMessage(count: number) {
+  if (count === 0) return "The folder is empty.";
+  return `The ${plural(count)} in it won't be deleted; ${count === 1 ? "it moves" : "they move"} out of the folder.`;
+}
 
 function matches(e: EntrySummary, query: string, tag: string | null) {
   if (tag && !e.tags.some((t) => sameTag(t, tag))) return false;
@@ -34,6 +61,8 @@ function matches(e: EntrySummary, query: string, tag: string | null) {
 
 export default function App() {
   const [entries, setEntries] = useState<EntrySummary[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -55,8 +84,13 @@ export default function App() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const list = await run(api.listEntries);
-    if (list) setEntries(list);
+    const result = await run(() => Promise.all([api.listEntries(), api.listFolders()]));
+    if (result) {
+      setEntries(result[0]);
+      setFolders(
+        result[1].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+      );
+    }
     setLoaded(true);
   }, [run]);
 
@@ -73,6 +107,33 @@ export default function App() {
       unlisten.then((stop) => stop());
     };
   }, []);
+
+  // HTML drag and drop is on (dragDropEnabled: false in tauri.conf.json), so
+  // stop a file dropped on the window from replacing the app with that file.
+  useEffect(() => {
+    const block = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+    };
+    window.addEventListener("dragover", block);
+    window.addEventListener("drop", block);
+    return () => {
+      window.removeEventListener("dragover", block);
+      window.removeEventListener("drop", block);
+    };
+  }, []);
+
+  function toggleFolder(id: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      try {
+        localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
+      } catch {
+        // Storage unavailable; the folder still toggles for this session.
+      }
+      return next;
+    });
+  }
 
   const tags = useMemo(() => collectTags(entries), [entries]);
 
@@ -119,6 +180,45 @@ export default function App() {
     }
   }
 
+  /** Keeps the open entry's folder in sync after a move or folder delete. */
+  function setPaneFolder(isAffected: (entryId: string) => boolean, folderId: string | null) {
+    setPane((p) =>
+      (p.kind === "view" || p.kind === "edit") && isAffected(p.entry.id)
+        ? { ...p, entry: { ...p.entry, folderId } }
+        : p,
+    );
+  }
+
+  async function moveEntry(id: string, folderId: string | null) {
+    const ok = await run(async () => {
+      await api.moveEntry(id, folderId);
+      return true;
+    });
+    if (ok) setPaneFolder((e) => e === id, folderId);
+    await refresh();
+  }
+
+  /** Throws so FolderDialog shows the error (e.g. a duplicate name) inline. */
+  async function saveFolder(name: string, folder?: Folder) {
+    if (folder) await api.renameFolder(folder.id, name);
+    else await api.addFolder(name);
+    setDialog(null);
+    await refresh();
+  }
+
+  async function deleteFolder(folder: Folder) {
+    setDialog(null);
+    const ok = await run(async () => {
+      await api.deleteFolder(folder.id);
+      return true;
+    });
+    if (ok) {
+      const inFolder = new Set(entries.filter((e) => e.folderId === folder.id).map((e) => e.id));
+      setPaneFolder((e) => inFolder.has(e), null);
+    }
+    await refresh();
+  }
+
   async function exportBackup(pin: string) {
     const path = await saveDialog({
       defaultPath: `account-vault-${new Date().toISOString().slice(0, 10)}.avbackup`,
@@ -148,6 +248,7 @@ export default function App() {
   }
 
   const selectedId = pane.kind === "view" || pane.kind === "edit" ? pane.entry.id : null;
+  const folderName = (id: string | null) => folders.find((f) => f.id === id)?.name;
 
   return (
     <div className="app">
@@ -160,7 +261,13 @@ export default function App() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <NewMenu onCreate={(kind) => setPane({ kind: "new", entryKind: kind })} />
+          <NewMenu
+            onCreate={(kind) =>
+              kind === "folder"
+                ? setDialog({ kind: "folder" })
+                : setPane({ kind: "new", entryKind: kind })
+            }
+          />
         </div>
         {tags.length > 0 && (
           <div className="tag-filter" role="toolbar" aria-label="Filter by tag">
@@ -185,7 +292,20 @@ export default function App() {
             })}
           </div>
         )}
-        {loaded && <EntryList entries={visible} selectedId={selectedId} onSelect={select} />}
+        {loaded && (
+          <EntryList
+            entries={visible}
+            folders={folders}
+            filtering={query.trim() !== "" || activeTag !== null}
+            selectedId={selectedId}
+            collapsed={collapsed}
+            onSelect={select}
+            onToggleFolder={toggleFolder}
+            onMove={moveEntry}
+            onRenameFolder={(folder) => setDialog({ kind: "folder", folder })}
+            onDeleteFolder={(folder) => setDialog({ kind: "deleteFolder", folder })}
+          />
+        )}
         <footer className="sidebar-footer">
           <span>
             {entries.length} {entries.length === 1 ? "entry" : "entries"}
@@ -223,6 +343,7 @@ export default function App() {
           <EntryView
             key={pane.entry.id}
             entry={pane.entry}
+            folderName={folderName(pane.entry.folderId)}
             onEdit={() => setPane({ kind: "edit", entry: pane.entry })}
             onDelete={() => remove(pane.entry.id)}
           />
@@ -234,6 +355,7 @@ export default function App() {
             newKind={pane.kind === "new" ? pane.entryKind : "account"}
             onSave={save}
             allTags={tags.map((t) => t.tag)}
+            folders={folders}
             onCancel={() =>
               setPane(pane.kind === "edit" ? { kind: "view", entry: pane.entry } : { kind: "empty" })
             }
@@ -283,6 +405,26 @@ export default function App() {
             setDialog(null);
             run(api.cancelClose);
           }}
+        />
+      )}
+      {dialog?.kind === "folder" && (
+        <FolderDialog
+          title={dialog.folder ? "Rename folder" : "New folder"}
+          submitLabel={dialog.folder ? "Rename" : "Create"}
+          initialName={dialog.folder?.name}
+          onSubmit={(name) => saveFolder(name, dialog.folder)}
+          onCancel={closeDialog}
+        />
+      )}
+      {dialog?.kind === "deleteFolder" && (
+        <ConfirmDialog
+          title={`Delete folder "${dialog.folder.name}"?`}
+          message={deleteFolderMessage(
+            entries.filter((e) => e.folderId === dialog.folder.id).length,
+          )}
+          confirmLabel="Delete folder"
+          onConfirm={() => deleteFolder(dialog.folder)}
+          onCancel={closeDialog}
         />
       )}
       {dialog?.kind === "import" && (

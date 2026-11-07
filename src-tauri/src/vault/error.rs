@@ -26,6 +26,12 @@ pub enum VaultError {
     Clipboard(String),
     #[error("entry not found")]
     EntryNotFound,
+    #[error("folder not found")]
+    FolderNotFound,
+    #[error("folder name can't be empty")]
+    FolderNameEmpty,
+    #[error("a folder with that name already exists")]
+    FolderExists,
     #[error("encryption failed")]
     Crypto,
     #[error("file error: {0}")]

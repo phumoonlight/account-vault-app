@@ -7,6 +7,19 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 pub struct VaultData {
     #[serde(default)]
     pub entries: Vec<Entry>,
+    #[serde(default)]
+    pub folders: Vec<Folder>,
+}
+
+/// A named group of entries. Entries point to it with `Entry::folder_id`.
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[serde(rename_all = "camelCase")]
+pub struct Folder {
+    pub id: String,
+    pub name: String,
+    /// Unix time in milliseconds.
+    #[serde(default)]
+    pub created_at: u64,
 }
 
 /// What an entry holds. Entries saved before kinds existed are accounts.
@@ -49,6 +62,9 @@ pub struct Entry {
     /// Labels for filtering, e.g. "work", "bank". Normalized by `normalize_tags`.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// The folder this entry is in, or `None` for no folder.
+    #[serde(default)]
+    pub folder_id: Option<String>,
     /// Unix time in milliseconds.
     pub created_at: u64,
     pub updated_at: u64,
@@ -92,6 +108,8 @@ pub struct EntryInput {
     pub favorite: bool,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub folder_id: Option<String>,
 }
 
 /// List view of an entry, without the password, secret fields or env values.
@@ -105,6 +123,7 @@ pub struct EntrySummary {
     pub url: String,
     pub favorite: bool,
     pub tags: Vec<String>,
+    pub folder_id: Option<String>,
     pub updated_at: u64,
 }
 
@@ -135,6 +154,21 @@ pub fn normalize_tags(tags: &[String]) -> Vec<String> {
     out
 }
 
+pub const MAX_FOLDER_NAME_LEN: usize = 64;
+
+/// Trims and collapses whitespace and truncates to `MAX_FOLDER_NAME_LEN`
+/// characters. May return an empty string.
+pub fn normalize_folder_name(name: &str) -> String {
+    let name: String = name
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(MAX_FOLDER_NAME_LEN)
+        .collect();
+    name.trim_end().to_owned()
+}
+
 impl Entry {
     pub fn new(id: String, input: &EntryInput, now: u64) -> Self {
         let mut entry = Self {
@@ -150,6 +184,7 @@ impl Entry {
             env: String::new(),
             favorite: false,
             tags: Vec::new(),
+            folder_id: None,
             created_at: now,
             updated_at: now,
         };
@@ -181,6 +216,7 @@ impl Entry {
         }
         self.favorite = input.favorite;
         self.tags = normalize_tags(&input.tags);
+        self.folder_id = input.folder_id.clone();
         self.updated_at = now;
     }
 
@@ -226,6 +262,7 @@ impl Entry {
             url: self.url.clone(),
             favorite: self.favorite,
             tags: self.tags.clone(),
+            folder_id: self.folder_id.clone(),
             updated_at: self.updated_at,
         }
     }
@@ -252,6 +289,25 @@ mod tests {
 
         let many: Vec<String> = (0..30).map(|i| format!("t{i}")).collect();
         assert_eq!(normalize_tags(&many).len(), MAX_TAGS);
+    }
+
+    #[test]
+    fn normalize_folder_name_trims_and_limits() {
+        assert_eq!(normalize_folder_name("  Work   stuff "), "Work stuff");
+        assert_eq!(normalize_folder_name("   "), "");
+        let long = "x".repeat(100);
+        assert_eq!(
+            normalize_folder_name(&long).chars().count(),
+            MAX_FOLDER_NAME_LEN
+        );
+    }
+
+    #[test]
+    fn vault_without_folders_deserializes() {
+        let json = r#"{"entries":[{"id":"a","title":"A","createdAt":0,"updatedAt":0}]}"#;
+        let data: VaultData = serde_json::from_str(json).unwrap();
+        assert!(data.folders.is_empty());
+        assert_eq!(data.entries[0].folder_id, None);
     }
 
     #[test]

@@ -1,5 +1,12 @@
-import { useId, useState, type FormEvent } from "react";
-import { emptyInput, type CustomField, type Entry, type EntryInput, type EntryKind } from "../api";
+import { useEffect, useId, useState, type FormEvent } from "react";
+import {
+  emptyInput,
+  type CustomField,
+  type Entry,
+  type EntryInput,
+  type EntryKind,
+  type Folder,
+} from "../api";
 import { EnvEditor } from "./EnvEditor";
 import { generatePassword } from "../password";
 import { StrengthMeter } from "./StrengthMeter";
@@ -14,9 +21,18 @@ interface Props {
   onCancel: () => void;
   /** Tags already used in the vault, for autocomplete. */
   allTags: string[];
+  /** All folders, sorted by name. */
+  folders: Folder[];
 }
 
-export function EntryForm({ initial, newKind = "account", onSave, onCancel, allTags }: Props) {
+export function EntryForm({
+  initial,
+  newKind = "account",
+  onSave,
+  onCancel,
+  allTags,
+  folders,
+}: Props) {
   const [form, setForm] = useState<EntryInput>(() =>
     initial
       ? {
@@ -30,10 +46,20 @@ export function EntryForm({ initial, newKind = "account", onSave, onCancel, allT
           env: initial.env,
           favorite: initial.favorite,
           tags: [...initial.tags],
+          folderId: initial.folderId,
         }
       : emptyInput(newKind),
   );
   const isEnv = form.kind === "env";
+  /** Null unless `id` is a folder that still exists. */
+  const knownFolder = (id: string | null) => (id && folders.some((f) => f.id === id) ? id : null);
+
+  // Follow moves made in the sidebar while this form is open (dragging this
+  // entry, deleting its folder), so saving doesn't undo them.
+  const initialFolderId = initial?.folderId ?? null;
+  useEffect(() => {
+    setForm((f) => (f.folderId === initialFolderId ? f : { ...f, folderId: initialFolderId }));
+  }, [initialFolderId]);
   const [showPassword, setShowPassword] = useState(false);
   const tagInputId = useId();
   const [saving, setSaving] = useState(false);
@@ -55,6 +81,7 @@ export function EntryForm({ initial, newKind = "account", onSave, onCancel, allT
         ...form,
         title: form.title.trim(),
         customFields: form.customFields.filter((f) => f.name.trim() || f.value),
+        folderId: knownFolder(form.folderId),
       });
     } finally {
       setSaving(false);
@@ -141,6 +168,22 @@ export function EntryForm({ initial, newKind = "account", onSave, onCancel, allT
               />
             </label>
           </>
+        )}
+        {folders.length > 0 && (
+          <label>
+            Folder
+            <select
+              value={knownFolder(form.folderId) ?? ""}
+              onChange={(e) => set("folderId", e.target.value || null)}
+            >
+              <option value="">No folder</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
         <label htmlFor={tagInputId}>
           Tags

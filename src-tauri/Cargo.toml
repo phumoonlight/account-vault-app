@@ -1,6 +1,6 @@
 [package]
 name = "account-vault-app"
-version = "0.2.0"
+version = "0.3.0"
 description = "Desktop vault for account credentials"
 authors = ["phumoonlight"]
 edition = "2021"

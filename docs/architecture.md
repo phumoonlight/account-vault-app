@@ -13,8 +13,10 @@ src/                         React UI
   dotenv.ts                  dotenv parse/serialize/merge for env entries; keeps each line's raw text so comments survive grid edits
   tags.ts                    tag normalization (mirrors Rust normalize_tags) and tag counts for the filter
   components/
-    EntryList / EntryView / EntryForm
-    NewMenu.tsx              "New" dropdown: Account (default) or Environment variables
+    EntryList.tsx            sidebar list: collapsible folders, then entries in no folder; HTML drag-and-drop to move entries
+    EntryView / EntryForm    (the form has a Folder picker, the keyboard way to move an entry)
+    NewMenu.tsx              "New" dropdown: Account (default), Environment variables, or Folder
+    FolderDialog.tsx         name prompt for creating/renaming a folder
     EnvEditor / EnvView      env entry editor (Grid/Raw, .env import) and viewer (Grid/Raw, values masked)
     useCopy.ts               copy via backend + "Copied · 30s" countdown, shared by Field and env rows
     TagInput.tsx             chip input with autocomplete from existing tags
@@ -27,7 +29,7 @@ src-tauri/src/
   commands.rs                #[tauri::command] fns; defines AppState { vault_path, keys, Mutex<Option<Vault>> }
   vault/
     mod.rs                   Vault: open/create, CRUD, import_entries, crash-safe save(); tests
-    model.rs                 VaultData, Entry (kind: account|env), EntryInput, EntrySummary, CustomField
+    model.rs                 VaultData { entries, folders }, Entry (kind: account|env, folder_id), Folder, EntryInput, EntrySummary, CustomField
     crypto.rs                vault file format (XChaCha20-Poly1305)
     keystore.rs              KeyStore trait; OsKeyStore = OS credential store via `keyring`
     backup.rs                .avbackup format (Argon2id PIN -> XChaCha20-Poly1305)
@@ -48,6 +50,8 @@ src-tauri/src/
 - CSP in `tauri.conf.json` is strict; capabilities are `core:default`, `opener:default`, `dialog:default`.
 - Entries have a `kind` (`account`, the serde default, or `env`). Env entries keep their dotenv text in `env`; `Entry::apply` clears the fields of the other kind. `EntrySummary` never includes env values.
 - Importing a `.env` file is done in the webview with an `<input type="file">` (only the file the user picks, max 1 MB); there is no backend command that reads arbitrary text files.
+- Folders are one level deep. `Entry::folder_id` must name an existing folder (`check_folder`); ids pointing at a missing folder are cleared on open. Deleting a folder keeps its entries (they move to no folder). Moving an entry doesn't change `updated_at`. Backups carry folders; import merges them into existing folders by name (case-insensitive).
+- The window has `dragDropEnabled: false` so HTML drag-and-drop works in WebView2 (Tauri's native file drop would swallow it). `App.tsx` blocks file drops on the window so a dropped file can't replace the page.
 - Import refuses files over 50 MB and skips duplicates (`Entry::same_login`: title + username + password + url), assigning fresh ids.
 
 ## File formats (little-endian; the whole header is the AEAD's AAD)

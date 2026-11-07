@@ -63,6 +63,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
   color: inherit;
@@ -126,6 +127,7 @@ button.small {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   padding: 7px 10px;
@@ -136,6 +138,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus,
 button:focus-visible {
   outline: 2px solid var(--accent);
@@ -240,6 +243,147 @@ textarea {
   padding: 6px;
   overflow-y: auto;
   list-style: none;
+}
+
+.entry-list.drop-over {
+  background: var(--accent-soft);
+}
+
+.entry-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry-item.dragging {
+  opacity: 0.45;
+}
+
+/* ---------- Folders ---------- */
+
+.folder {
+  border-radius: var(--radius);
+}
+
+.folder.drop-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-soft);
+}
+
+.folder-header {
+  display: flex;
+  align-items: center;
+}
+
+.folder-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.folder-chevron {
+  flex: none;
+  transition: transform 120ms ease-out;
+}
+
+.folder-chevron.open {
+  transform: rotate(90deg);
+}
+
+.folder-icon {
+  flex: none;
+}
+
+.folder-name {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.folder-count {
+  flex: none;
+  font-size: 12px;
+}
+
+.folder-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding-right: 4px;
+  opacity: 0;
+}
+
+.folder-header:hover .folder-actions,
+.folder-actions:focus-within {
+  opacity: 1;
+}
+
+button.icon-only {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+}
+
+button.icon-only:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.entry-list .folder-entries {
+  padding-left: 14px;
+}
+
+.folder-empty {
+  padding: 4px 8px 8px 22px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.drop-out {
+  margin-top: 6px;
+  padding: 10px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.drop-out.drop-over {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.folder-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.menu-item.menu-separated {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+  padding-top: 9px;
 }
 
 .list-empty {
@@ -405,6 +549,7 @@ textarea {
 }
 
 .form-grid > label > input,
+.form-grid > label > select,
 .form-grid > label > textarea,
 .input-row {
   color: var(--text);

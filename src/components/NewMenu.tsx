@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { EntryKind } from "../api";
 
-const OPTIONS: { kind: EntryKind; label: string; hint: string }[] = [
+/** What the New menu can create: an entry of some kind, or a folder. */
+export type NewKind = EntryKind | "folder";
+
+const OPTIONS: { kind: NewKind; label: string; hint: string }[] = [
   { kind: "account", label: "Account", hint: "Username, password, website" },
   { kind: "env", label: "Environment variables", hint: "KEY=value pairs, .env import" },
+  { kind: "folder", label: "Folder", hint: "Group accounts and variables" },
 ];
 
 interface Props {
-  onCreate: (kind: EntryKind) => void;
+  onCreate: (kind: NewKind) => void;
 }
 
-/** "New" button that opens a menu of entry kinds; Account is first and focused. */
+/** "New" button that opens a menu of entry kinds and Folder; Account is first and focused. */
 export function NewMenu({ onCreate }: Props) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -27,7 +31,7 @@ export function NewMenu({ onCreate }: Props) {
     return () => document.removeEventListener("pointerdown", onPointer);
   }, [open]);
 
-  function choose(kind: EntryKind) {
+  function choose(kind: NewKind) {
     setOpen(false);
     onCreate(kind);
   }
@@ -97,11 +101,11 @@ export function NewMenu({ onCreate }: Props) {
           {OPTIONS.map((o, i) => (
             <button
               key={o.kind}
+              className={`menu-item${o.kind === "folder" ? " menu-separated" : ""}`}
               ref={(el) => {
                 items.current[i] = el;
               }}
               role="menuitem"
-              className="menu-item"
               onClick={() => choose(o.kind)}
             >
               <span className="menu-label">{o.label}</span>

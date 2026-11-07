@@ -4,14 +4,17 @@ import type { Entry } from "../api";
 import { useCopy } from "./useCopy";
 import { HoldButton } from "./HoldButton";
 import { EnvView } from "./EnvView";
+import { FolderIcon } from "./FolderIcon";
 
 interface Props {
   entry: Entry;
+  /** Name of the entry's folder, if it's in one. */
+  folderName?: string;
   onEdit: () => void;
   onDelete: () => void;
 }
 
-export function EntryView({ entry, onEdit, onDelete }: Props) {
+export function EntryView({ entry, folderName, onEdit, onDelete }: Props) {
   const [deleting, setDeleting] = useState(false);
 
   return (
@@ -26,8 +29,14 @@ export function EntryView({ entry, onEdit, onDelete }: Props) {
         </div>
       </header>
 
-      {entry.tags.length > 0 && (
+      {(folderName || entry.tags.length > 0) && (
         <div className="tag-row">
+          {folderName && (
+            <span className="folder-badge">
+              <FolderIcon />
+              {folderName}
+            </span>
+          )}
           {entry.tags.map((t) => (
             <span className="tag" key={t}>
               {t}

@@ -6,6 +6,7 @@ pub mod model;
 
 use serde::Serialize;
 use std::{
+    collections::HashMap,
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -17,7 +18,7 @@ use zeroize::Zeroizing;
 use crypto::Key;
 pub use error::{Result, VaultError};
 use keystore::KeyStore;
-use model::{Entry, EntryInput, EntrySummary, VaultData};
+use model::{normalize_folder_name, Entry, EntryInput, EntrySummary, Folder, VaultData};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +49,7 @@ impl Vault {
         let plaintext = crypto::open(&key, &file)?;
         let mut data: VaultData = serde_json::from_slice(&plaintext)?;
         data.entries.iter_mut().for_each(Entry::migrate);
+        drop_missing_folder_ids(&mut data);
         Ok(Self {
             path: path.to_path_buf(),
             key,
@@ -101,16 +103,54 @@ impl Vault {
         &self.data.entries
     }
 
-    /// Adds `entries` with fresh ids, skipping any that duplicate an existing entry.
-    pub fn import_entries(&mut self, entries: Vec<Entry>) -> Result<ImportSummary> {
+    pub fn folders(&self) -> &[Folder] {
+        &self.data.folders
+    }
+
+    /// Adds `entries` with fresh ids, skipping any that duplicate an existing
+    /// entry. Each of `folders` is merged into the vault's folder with the
+    /// same name (ignoring case), or added; entries keep their folder.
+    pub fn import_entries(
+        &mut self,
+        entries: Vec<Entry>,
+        folders: Vec<Folder>,
+    ) -> Result<ImportSummary> {
         let now = now_ms();
         self.mutate(|data| {
+            // Imported folder id -> folder id in this vault.
+            let mut folder_ids: HashMap<String, String> = HashMap::new();
+            for folder in &folders {
+                let name = normalize_folder_name(&folder.name);
+                if name.is_empty() {
+                    continue;
+                }
+                let id = match data.folders.iter().find(|f| same_name(&f.name, &name)) {
+                    Some(existing) => existing.id.clone(),
+                    None => {
+                        let created_at = if folder.created_at == 0 {
+                            now
+                        } else {
+                            folder.created_at
+                        };
+                        let added = new_folder(name, created_at);
+                        let id = added.id.clone();
+                        data.folders.push(added);
+                        id
+                    }
+                };
+                folder_ids.insert(folder.id.clone(), id);
+            }
+
             let mut summary = ImportSummary {
                 added: 0,
                 skipped: 0,
             };
             for mut entry in entries {
                 entry.migrate();
+                entry.folder_id = entry
+                    .folder_id
+                    .as_ref()
+                    .and_then(|id| folder_ids.get(id).cloned());
                 if data.entries.iter().any(|e| e.same_login(&entry)) {
                     summary.skipped += 1;
                     continue;
@@ -145,6 +185,7 @@ impl Vault {
     pub fn add_entry(&mut self, input: &EntryInput) -> Result<Entry> {
         let entry = Entry::new(uuid::Uuid::new_v4().to_string(), input, now_ms());
         self.mutate(|data| {
+            check_folder(data, input.folder_id.as_deref())?;
             data.entries.push(entry.clone());
             Ok(entry)
         })
@@ -152,6 +193,7 @@ impl Vault {
 
     pub fn update_entry(&mut self, id: &str, input: &EntryInput) -> Result<Entry> {
         self.mutate(|data| {
+            check_folder(data, input.folder_id.as_deref())?;
             let entry = data
                 .entries
                 .iter_mut()
@@ -172,6 +214,110 @@ impl Vault {
             data.entries.remove(index);
             Ok(())
         })
+    }
+
+    /// Puts an entry in a folder, or in no folder. Doesn't change `updated_at`,
+    /// since the entry's contents stay the same.
+    pub fn move_entry(&mut self, id: &str, folder_id: Option<&str>) -> Result<()> {
+        self.mutate(|data| {
+            check_folder(data, folder_id)?;
+            let entry = data
+                .entries
+                .iter_mut()
+                .find(|e| e.id == id)
+                .ok_or(VaultError::EntryNotFound)?;
+            entry.folder_id = folder_id.map(str::to_owned);
+            Ok(())
+        })
+    }
+
+    pub fn add_folder(&mut self, name: &str) -> Result<Folder> {
+        let name = normalize_folder_name(name);
+        self.mutate(|data| {
+            check_folder_name(data, &name, None)?;
+            let folder = new_folder(name, now_ms());
+            data.folders.push(folder.clone());
+            Ok(folder)
+        })
+    }
+
+    pub fn rename_folder(&mut self, id: &str, name: &str) -> Result<Folder> {
+        let name = normalize_folder_name(name);
+        self.mutate(|data| {
+            check_folder_name(data, &name, Some(id))?;
+            let folder = data
+                .folders
+                .iter_mut()
+                .find(|f| f.id == id)
+                .ok_or(VaultError::FolderNotFound)?;
+            folder.name = name;
+            Ok(folder.clone())
+        })
+    }
+
+    /// Deletes the folder only; its entries move out of it and are kept.
+    pub fn delete_folder(&mut self, id: &str) -> Result<()> {
+        self.mutate(|data| {
+            let index = data
+                .folders
+                .iter()
+                .position(|f| f.id == id)
+                .ok_or(VaultError::FolderNotFound)?;
+            data.folders.remove(index);
+            for entry in &mut data.entries {
+                if entry.folder_id.as_deref() == Some(id) {
+                    entry.folder_id = None;
+                }
+            }
+            Ok(())
+        })
+    }
+}
+
+fn new_folder(name: String, created_at: u64) -> Folder {
+    Folder {
+        id: uuid::Uuid::new_v4().to_string(),
+        name,
+        created_at,
+    }
+}
+
+fn same_name(a: &str, b: &str) -> bool {
+    a.to_lowercase() == b.to_lowercase()
+}
+
+/// `None` (no folder) is always valid.
+fn check_folder(data: &VaultData, folder_id: Option<&str>) -> Result<()> {
+    match folder_id {
+        Some(id) if !data.folders.iter().any(|f| f.id == id) => Err(VaultError::FolderNotFound),
+        _ => Ok(()),
+    }
+}
+
+/// `name` must already be normalized. `except` is the folder being renamed.
+fn check_folder_name(data: &VaultData, name: &str, except: Option<&str>) -> Result<()> {
+    if name.is_empty() {
+        return Err(VaultError::FolderNameEmpty);
+    }
+    if data
+        .folders
+        .iter()
+        .any(|f| Some(f.id.as_str()) != except && same_name(&f.name, name))
+    {
+        return Err(VaultError::FolderExists);
+    }
+    Ok(())
+}
+
+/// Takes entries out of folders that no longer exist.
+fn drop_missing_folder_ids(data: &mut VaultData) {
+    let folders = &data.folders;
+    for entry in &mut data.entries {
+        if let Some(id) = &entry.folder_id {
+            if !folders.iter().any(|f| &f.id == id) {
+                entry.folder_id = None;
+            }
+        }
     }
 }
 
@@ -333,7 +479,7 @@ mod tests {
             Entry::new(String::new(), &other, 0),
             Entry::new(String::new(), &other, 0),
         ];
-        let summary = vault.import_entries(incoming).unwrap();
+        let summary = vault.import_entries(incoming, Vec::new()).unwrap();
         assert_eq!((summary.added, summary.skipped), (1, 2));
 
         let ids: Vec<_> = vault.entries().iter().map(|e| e.id.clone()).collect();
@@ -363,5 +509,116 @@ mod tests {
             vault.delete_entry(&id),
             Err(VaultError::EntryNotFound)
         ));
+    }
+
+    #[test]
+    fn folders_rename_and_delete_keeps_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault.avault");
+        let keys = MemoryKeyStore::default();
+        let mut vault = Vault::open(&path, &keys).unwrap();
+
+        let work = vault.add_folder("  Work ").unwrap();
+        assert_eq!(work.name, "Work");
+        assert!(matches!(
+            vault.add_folder("work"),
+            Err(VaultError::FolderExists)
+        ));
+        assert!(matches!(
+            vault.add_folder("   "),
+            Err(VaultError::FolderNameEmpty)
+        ));
+        // Renaming to its own name with different case is fine.
+        assert_eq!(vault.rename_folder(&work.id, "WORK").unwrap().name, "WORK");
+
+        let mut input = sample_input();
+        input.folder_id = Some(work.id.clone());
+        let id = vault.add_entry(&input).unwrap().id.clone();
+        let updated_at = vault.get_entry(&id).unwrap().updated_at;
+        drop(vault);
+
+        let mut vault = Vault::open(&path, &keys).unwrap();
+        assert_eq!(vault.folders().len(), 1);
+        assert_eq!(vault.list_entries()[0].folder_id, Some(work.id.clone()));
+
+        vault.move_entry(&id, None).unwrap();
+        assert_eq!(vault.get_entry(&id).unwrap().folder_id, None);
+        assert_eq!(vault.get_entry(&id).unwrap().updated_at, updated_at);
+        vault.move_entry(&id, Some(&work.id)).unwrap();
+
+        vault.delete_folder(&work.id).unwrap();
+        assert!(vault.folders().is_empty());
+        assert_eq!(vault.get_entry(&id).unwrap().folder_id, None);
+    }
+
+    #[test]
+    fn unknown_folder_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault.avault");
+        let mut vault = Vault::open(&path, &MemoryKeyStore::default()).unwrap();
+        let id = vault.add_entry(&sample_input()).unwrap().id.clone();
+
+        assert!(matches!(
+            vault.move_entry(&id, Some("nope")),
+            Err(VaultError::FolderNotFound)
+        ));
+        let mut input = sample_input();
+        input.folder_id = Some("nope".into());
+        assert!(matches!(
+            vault.add_entry(&input),
+            Err(VaultError::FolderNotFound)
+        ));
+        assert_eq!(vault.entries().len(), 1);
+    }
+
+    #[test]
+    fn missing_folder_ids_are_dropped_on_open() {
+        let json = r#"{"entries":[
+            {"id":"a","title":"A","folderId":"gone","createdAt":0,"updatedAt":0},
+            {"id":"b","title":"B","folderId":"f","createdAt":0,"updatedAt":0}
+        ],"folders":[{"id":"f","name":"Work"}]}"#;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault.avault");
+        let keys = MemoryKeyStore::default();
+        let key = crypto::generate_key();
+        keys.save(&key).unwrap();
+        fs::write(&path, crypto::seal(&key, json.as_bytes()).unwrap()).unwrap();
+
+        let vault = Vault::open(&path, &keys).unwrap();
+        assert_eq!(vault.get_entry("a").unwrap().folder_id, None);
+        assert_eq!(
+            vault.get_entry("b").unwrap().folder_id.as_deref(),
+            Some("f")
+        );
+    }
+
+    #[test]
+    fn import_merges_folders_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault.avault");
+        let mut vault = Vault::open(&path, &MemoryKeyStore::default()).unwrap();
+        let work = vault.add_folder("Work").unwrap();
+
+        let folders = vec![new_folder("work".into(), 5), new_folder("Home".into(), 0)];
+        let mut a = Entry::new(String::new(), &sample_input(), 1);
+        a.folder_id = Some(folders[0].id.clone());
+        let mut other = sample_input();
+        other.title = "Other".into();
+        let mut b = Entry::new(String::new(), &other, 1);
+        b.folder_id = Some(folders[1].id.clone());
+        let mut c = Entry::new(String::new(), &other, 1);
+        c.title = "Third".into();
+        c.folder_id = Some("not-in-backup".into());
+
+        let summary = vault.import_entries(vec![a, b, c], folders).unwrap();
+        assert_eq!((summary.added, summary.skipped), (3, 0));
+        assert_eq!(vault.folders().len(), 2);
+        let home = vault.folders().iter().find(|f| f.name == "Home").unwrap();
+        assert!(home.created_at > 0);
+
+        let entries = vault.entries();
+        assert_eq!(entries[0].folder_id.as_ref(), Some(&work.id));
+        assert_eq!(entries[1].folder_id.as_ref(), Some(&home.id));
+        assert_eq!(entries[2].folder_id, None);
     }
 }

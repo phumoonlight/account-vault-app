@@ -23,6 +23,8 @@ export interface EntryInput {
   env: string;
   favorite: boolean;
   tags: string[];
+  /** The folder the entry is in, or null for none. */
+  folderId: string | null;
 }
 
 export interface Entry extends EntryInput {
@@ -39,8 +41,18 @@ export interface EntrySummary {
   url: string;
   favorite: boolean;
   tags: string[];
+  folderId: string | null;
   updatedAt: number;
 }
+
+export interface Folder {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+/** Mirrors MAX_FOLDER_NAME_LEN in model.rs. */
+export const MAX_FOLDER_NAME_LEN = 64;
 
 export interface ImportSummary {
   added: number;
@@ -55,6 +67,14 @@ export const api = {
   addEntry: (input: EntryInput) => invoke<Entry>("add_entry", { input }),
   updateEntry: (id: string, input: EntryInput) => invoke<Entry>("update_entry", { id, input }),
   deleteEntry: (id: string) => invoke<void>("delete_entry", { id }),
+  /** Puts an entry in a folder, or in no folder when `folderId` is null. */
+  moveEntry: (id: string, folderId: string | null) =>
+    invoke<void>("move_entry", { id, folderId }),
+  listFolders: () => invoke<Folder[]>("list_folders"),
+  addFolder: (name: string) => invoke<Folder>("add_folder", { name }),
+  renameFolder: (id: string, name: string) => invoke<Folder>("rename_folder", { id, name }),
+  /** Deletes the folder only; its entries are kept, in no folder. */
+  deleteFolder: (id: string) => invoke<void>("delete_folder", { id }),
   /** Returns the number of entries exported. */
   /** For a secret, returns the seconds until the clipboard is cleared again. */
   copyToClipboard: (text: string, secret: boolean) =>
@@ -80,5 +100,6 @@ export function emptyInput(kind: EntryKind = "account"): EntryInput {
     env: "",
     favorite: false,
     tags: [],
+    folderId: null,
   };
 }
