@@ -9,7 +9,7 @@ Stack: **Tauri 2** (Rust backend in `src-tauri/`) + **React 19 / TypeScript / Vi
 ```sh
 npm run dev:app            # run the app (= tauri dev; Vite on :1420 + Rust, hot reload both sides)
 npm run build              # typecheck (tsc) + build frontend: the frontend "test"
-npm run build:app          # release installer (= tauri build) -> src-tauri/target/release/bundle/
+npm run build:app          # release installers (tauri build, then copied to release/)
                            # (keep "dev"/"build" as vite: Tauri runs "npm run dev"/"npm run build"
                            #  itself, so pointing them at tauri would recurse forever)
 
