@@ -8,13 +8,19 @@ export interface CustomField {
   secret: boolean;
 }
 
+/** "env" entries hold dotenv text in `env` instead of login fields. */
+export type EntryKind = "account" | "env";
+
 export interface EntryInput {
+  kind: EntryKind;
   title: string;
   username: string;
   password: string;
   url: string;
   notes: string;
   customFields: CustomField[];
+  /** Dotenv text; only used when kind is "env". */
+  env: string;
   favorite: boolean;
   tags: string[];
 }
@@ -27,6 +33,7 @@ export interface Entry extends EntryInput {
 
 export interface EntrySummary {
   id: string;
+  kind: EntryKind;
   title: string;
   username: string;
   url: string;
@@ -61,14 +68,16 @@ export const api = {
     invoke<ImportSummary>("import_backup", { path, pin }),
 };
 
-export function emptyInput(): EntryInput {
+export function emptyInput(kind: EntryKind = "account"): EntryInput {
   return {
+    kind,
     title: "",
     username: "",
     password: "",
     url: "",
     notes: "",
     customFields: [],
+    env: "",
     favorite: false,
     tags: [],
   };

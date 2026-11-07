@@ -18,15 +18,28 @@ export function EntryList({ entries, selectedId, onSelect }: Props) {
             className={`entry-item${e.id === selectedId ? " selected" : ""}`}
             onClick={() => onSelect(e.id)}
           >
-            <span className="entry-avatar" aria-hidden>
-              {(e.title.trim()[0] ?? "?").toUpperCase()}
-            </span>
+            {e.kind === "env" ? (
+              <span className="entry-avatar env" aria-hidden>
+                .env
+              </span>
+            ) : (
+              <span className="entry-avatar" aria-hidden>
+                {(e.title.trim()[0] ?? "?").toUpperCase()}
+              </span>
+            )}
             <span className="entry-text">
               <span className="entry-title">
                 {e.title || "(untitled)"}
-                {e.favorite && <span className="star" aria-label="favorite"> ★</span>}
+                {e.favorite && (
+                  <span className="star" aria-label="favorite">
+                    {" "}
+                    ★
+                  </span>
+                )}
               </span>
-              <span className="entry-sub">{e.username || e.url}</span>
+              <span className="entry-sub">
+                {e.kind === "env" ? "Environment variables" : e.username || e.url}
+              </span>
             </span>
           </button>
         </li>

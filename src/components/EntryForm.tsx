@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent } from "react";
-import { emptyInput, type CustomField, type Entry, type EntryInput } from "../api";
+import { emptyInput, type CustomField, type Entry, type EntryInput, type EntryKind } from "../api";
+import { EnvEditor } from "./EnvEditor";
 import { generatePassword } from "../password";
 import { StrengthMeter } from "./StrengthMeter";
 import { TagInput } from "./TagInput";
@@ -7,27 +8,32 @@ import { TagInput } from "./TagInput";
 interface Props {
   /** Entry being edited, or undefined when creating a new one. */
   initial?: Entry;
+  /** Kind of entry to create when `initial` is undefined. */
+  newKind?: EntryKind;
   onSave: (input: EntryInput) => Promise<void>;
   onCancel: () => void;
   /** Tags already used in the vault, for autocomplete. */
   allTags: string[];
 }
 
-export function EntryForm({ initial, onSave, onCancel, allTags }: Props) {
+export function EntryForm({ initial, newKind = "account", onSave, onCancel, allTags }: Props) {
   const [form, setForm] = useState<EntryInput>(() =>
     initial
       ? {
+          kind: initial.kind,
           title: initial.title,
           username: initial.username,
           password: initial.password,
           url: initial.url,
           notes: initial.notes,
           customFields: initial.customFields.map((f) => ({ ...f })),
+          env: initial.env,
           favorite: initial.favorite,
           tags: [...initial.tags],
         }
-      : emptyInput(),
+      : emptyInput(newKind),
   );
+  const isEnv = form.kind === "env";
   const [showPassword, setShowPassword] = useState(false);
   const tagInputId = useId();
   const [saving, setSaving] = useState(false);
@@ -58,7 +64,9 @@ export function EntryForm({ initial, onSave, onCancel, allTags }: Props) {
   return (
     <form className="pane" onSubmit={submit}>
       <header className="pane-header">
-        <h2>{initial ? "Edit entry" : "New entry"}</h2>
+        <h2>
+          {initial ? "Edit" : "New"} {isEnv ? "environment variables" : "account"}
+        </h2>
         <div className="actions">
           <button type="button" onClick={onCancel}>
             Cancel
@@ -76,109 +84,129 @@ export function EntryForm({ initial, onSave, onCancel, allTags }: Props) {
             autoFocus
             value={form.title}
             onChange={(e) => set("title", e.target.value)}
-            placeholder="e.g. GitHub"
+            placeholder={isEnv ? "e.g. Billing API (production)" : "e.g. GitHub"}
           />
         </label>
-        <label>
-          Username
-          <input
-            value={form.username}
-            onChange={(e) => set("username", e.target.value)}
-            placeholder="Username or email"
-            autoComplete="off"
-          />
-        </label>
-        <label>
-          Password
-          <div className="input-row">
-            <input
-              type={showPassword ? "text" : "password"}
-              value={form.password}
-              onChange={(e) => set("password", e.target.value)}
-              autoComplete="new-password"
-              spellCheck={false}
+        {isEnv ? (
+          <div className="form-group">
+            <span className="form-label">Variables</span>
+            <EnvEditor
+              value={form.env}
+              onChange={(env) => set("env", env)}
+              onImported={(name) => setForm((f) => (f.title.trim() ? f : { ...f, title: name }))}
             />
-            <button type="button" onClick={() => setShowPassword((s) => !s)}>
-              {showPassword ? "Hide" : "Show"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                set("password", generatePassword());
-                setShowPassword(true);
-              }}
-            >
-              Generate
-            </button>
           </div>
-          <StrengthMeter password={form.password} />
-        </label>
-        <label>
-          Website
-          <input
-            value={form.url}
-            onChange={(e) => set("url", e.target.value)}
-            placeholder="https://"
-          />
-        </label>
+        ) : (
+          <>
+            <label>
+              Username
+              <input
+                value={form.username}
+                onChange={(e) => set("username", e.target.value)}
+                placeholder="Username or email"
+                autoComplete="off"
+              />
+            </label>
+            <label>
+              Password
+              <div className="input-row">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={form.password}
+                  onChange={(e) => set("password", e.target.value)}
+                  autoComplete="new-password"
+                  spellCheck={false}
+                />
+                <button type="button" onClick={() => setShowPassword((s) => !s)}>
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    set("password", generatePassword());
+                    setShowPassword(true);
+                  }}
+                >
+                  Generate
+                </button>
+              </div>
+              <StrengthMeter password={form.password} />
+            </label>
+            <label>
+              Website
+              <input
+                value={form.url}
+                onChange={(e) => set("url", e.target.value)}
+                placeholder="https://"
+              />
+            </label>
+          </>
+        )}
         <label htmlFor={tagInputId}>
           Tags
-          <TagInput id={tagInputId} value={form.tags} onChange={(tags) => set("tags", tags)} suggestions={allTags} />
+          <TagInput
+            id={tagInputId}
+            value={form.tags}
+            onChange={(tags) => set("tags", tags)}
+            suggestions={allTags}
+          />
         </label>
         <label>
           Notes
           <textarea rows={4} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
         </label>
 
-        <fieldset>
-          <legend>Custom fields</legend>
-          {form.customFields.map((f, i) => (
-            <div className="custom-field" key={i}>
-              <input
-                placeholder="Name (e.g. PIN)"
-                value={f.name}
-                onChange={(e) => setField(i, { name: e.target.value })}
-              />
-              <input
-                placeholder="Value"
-                type={f.secret ? "password" : "text"}
-                value={f.value}
-                onChange={(e) => setField(i, { value: e.target.value })}
-                autoComplete="off"
-              />
-              <label className="checkbox">
+        {!isEnv && (
+          <fieldset>
+            <legend>Custom fields</legend>
+            {form.customFields.map((f, i) => (
+              <div className="custom-field" key={i}>
                 <input
-                  type="checkbox"
-                  checked={f.secret}
-                  onChange={(e) => setField(i, { secret: e.target.checked })}
+                  placeholder="Name (e.g. PIN)"
+                  value={f.name}
+                  onChange={(e) => setField(i, { name: e.target.value })}
                 />
-                Hidden
-              </label>
-              <button
-                type="button"
-                className="small"
-                aria-label="Remove field"
-                onClick={() =>
-                  set(
-                    "customFields",
-                    form.customFields.filter((_, j) => j !== i),
-                  )
-                }
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="small"
-            onClick={() =>
-              set("customFields", [...form.customFields, { name: "", value: "", secret: false }])
-            }
-          >
-            + Add field
-          </button>
-        </fieldset>
+                <input
+                  placeholder="Value"
+                  type={f.secret ? "password" : "text"}
+                  value={f.value}
+                  onChange={(e) => setField(i, { value: e.target.value })}
+                  autoComplete="off"
+                />
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={f.secret}
+                    onChange={(e) => setField(i, { secret: e.target.checked })}
+                  />
+                  Hidden
+                </label>
+                <button
+                  type="button"
+                  className="small"
+                  aria-label="Remove field"
+                  onClick={() =>
+                    set(
+                      "customFields",
+                      form.customFields.filter((_, j) => j !== i),
+                    )
+                  }
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="small"
+              onClick={() =>
+                set("customFields", [...form.customFields, { name: "", value: "", secret: false }])
+              }
+            >
+              + Add field
+            </button>
+          </fieldset>
+        )}
 
         <label className="checkbox">
           <input

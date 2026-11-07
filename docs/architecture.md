@@ -6,13 +6,17 @@ The frontend never touches the key, the vault file, or the filesystem. It calls 
 
 ```
 src/                         React UI
-  App.tsx                    layout, app state (Pane: empty|view|edit|new), Import/Export dialogs
+  App.tsx                    layout, app state (Pane: empty|view|edit|new{entryKind}), Import/Export dialogs
   api.ts                     typed wrappers around invoke(); TS types mirror Rust model (camelCase)
   password.ts                password generator (crypto.getRandomValues, rejection sampling)
   strength.ts                password strength estimate (entropy + pattern/common-password checks, no deps)
+  dotenv.ts                  dotenv parse/serialize/merge for env entries; keeps each line's raw text so comments survive grid edits
   tags.ts                    tag normalization (mirrors Rust normalize_tags) and tag counts for the filter
   components/
     EntryList / EntryView / EntryForm
+    NewMenu.tsx              "New" dropdown: Account (default) or Environment variables
+    EnvEditor / EnvView      env entry editor (Grid/Raw, .env import) and viewer (Grid/Raw, values masked)
+    useCopy.ts               copy via backend + "Copied · 30s" countdown, shared by Field and env rows
     TagInput.tsx             chip input with autocomplete from existing tags
     StrengthMeter.tsx        4-segment bar + tip under the password field
     HoldButton.tsx           press-and-hold confirm (pointer + Space/Enter); used for delete
@@ -23,7 +27,7 @@ src-tauri/src/
   commands.rs                #[tauri::command] fns; defines AppState { vault_path, keys, Mutex<Option<Vault>> }
   vault/
     mod.rs                   Vault: open/create, CRUD, import_entries, crash-safe save(); tests
-    model.rs                 VaultData, Entry, EntryInput, EntrySummary, CustomField
+    model.rs                 VaultData, Entry (kind: account|env), EntryInput, EntrySummary, CustomField
     crypto.rs                vault file format (XChaCha20-Poly1305)
     keystore.rs              KeyStore trait; OsKeyStore = OS credential store via `keyring`
     backup.rs                .avbackup format (Argon2id PIN -> XChaCha20-Poly1305)
@@ -42,6 +46,8 @@ src-tauri/src/
 - Backup PIN: digits only, 4-6 (validated in the frontend **and** `backup::is_valid_pin`). Argon2id is 256 MiB / t=12 / p=4 (~1.1 s) because a PIN has ≤10^6 values. Don't lower it without reason. KDF params are stored in the file header and capped on read (`is_reasonable`) so crafted files can't exhaust memory.
 - Copy goes through the `copy_to_clipboard` command (not `navigator.clipboard`). Secrets are cleared after `CLEAR_AFTER` (30 s); anything copied is cleared on `RunEvent::Exit`; both only if the clipboard still holds exactly what we copied. Closing the window while our copy is still on the clipboard is blocked (`CloseRequested` → `close-requested` event → `ConfirmDialog` → `close_app`/`cancel_close`); a second close while the warning is pending goes through, so a broken UI can't trap the window. Windows clipboard history (Win+V) is **not** excluded yet.
 - CSP in `tauri.conf.json` is strict; capabilities are `core:default`, `opener:default`, `dialog:default`.
+- Entries have a `kind` (`account`, the serde default, or `env`). Env entries keep their dotenv text in `env`; `Entry::apply` clears the fields of the other kind. `EntrySummary` never includes env values.
+- Importing a `.env` file is done in the webview with an `<input type="file">` (only the file the user picks, max 1 MB); there is no backend command that reads arbitrary text files.
 - Import refuses files over 50 MB and skips duplicates (`Entry::same_login`: title + username + password + url), assigning fresh ids.
 
 ## File formats (little-endian; the whole header is the AEAD's AAD)

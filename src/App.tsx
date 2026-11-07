@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { api, type Entry, type EntryInput, type EntrySummary } from "./api";
+import { api, type Entry, type EntryInput, type EntryKind, type EntrySummary } from "./api";
 import { EntryList } from "./components/EntryList";
 import { EntryView } from "./components/EntryView";
 import { EntryForm } from "./components/EntryForm";
 import { PinDialog } from "./components/PinDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { NewMenu } from "./components/NewMenu";
 import { collectTags, sameTag } from "./tags";
 import "./App.css";
 
@@ -14,7 +15,7 @@ type Pane =
   | { kind: "empty" }
   | { kind: "view"; entry: Entry }
   | { kind: "edit"; entry: Entry }
-  | { kind: "new" };
+  | { kind: "new"; entryKind: EntryKind };
 
 type Dialog =
   | { kind: "export" }
@@ -159,9 +160,7 @@ export default function App() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <button className="primary" onClick={() => setPane({ kind: "new" })}>
-            + New
-          </button>
+          <NewMenu onCreate={(kind) => setPane({ kind: "new", entryKind: kind })} />
         </div>
         {tags.length > 0 && (
           <div className="tag-filter" role="toolbar" aria-label="Filter by tag">
@@ -230,8 +229,9 @@ export default function App() {
         )}
         {(pane.kind === "edit" || pane.kind === "new") && (
           <EntryForm
-            key={pane.kind === "edit" ? pane.entry.id : "new"}
+            key={pane.kind === "edit" ? pane.entry.id : `new-${pane.entryKind}`}
             initial={pane.kind === "edit" ? pane.entry : undefined}
+            newKind={pane.kind === "new" ? pane.entryKind : "account"}
             onSave={save}
             allTags={tags.map((t) => t.tag)}
             onCancel={() =>
@@ -242,9 +242,17 @@ export default function App() {
         {pane.kind === "empty" && (
           <div className="placeholder">
             <p>{entries.length ? "Select an entry" : "Your vault is empty"}</p>
-            <button className="primary" onClick={() => setPane({ kind: "new" })}>
-              Add an account
-            </button>
+            <div className="actions">
+              <button
+                className="primary"
+                onClick={() => setPane({ kind: "new", entryKind: "account" })}
+              >
+                Add an account
+              </button>
+              <button onClick={() => setPane({ kind: "new", entryKind: "env" })}>
+                Add environment variables
+              </button>
+            </div>
           </div>
         )}
       </main>

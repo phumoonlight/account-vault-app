@@ -9,10 +9,24 @@ pub struct VaultData {
     pub entries: Vec<Entry>,
 }
 
+/// What an entry holds. Entries saved before kinds existed are accounts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EntryKind {
+    /// Login: username, password, website, custom fields.
+    #[default]
+    Account,
+    /// A set of environment variables, stored as dotenv text in `env`.
+    Env,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     pub id: String,
+    #[serde(default)]
+    #[zeroize(skip)]
+    pub kind: EntryKind,
     pub title: String,
     #[serde(default)]
     pub username: String,
@@ -27,6 +41,9 @@ pub struct Entry {
     pub notes: String,
     #[serde(default)]
     pub custom_fields: Vec<CustomField>,
+    /// Dotenv text (`KEY=value` lines) for `EntryKind::Env`; empty for accounts.
+    #[serde(default)]
+    pub env: String,
     #[serde(default)]
     pub favorite: bool,
     /// Labels for filtering, e.g. "work", "bank". Normalized by `normalize_tags`.
@@ -55,6 +72,9 @@ pub struct CustomField {
 #[serde(rename_all = "camelCase")]
 pub struct EntryInput {
     #[serde(default)]
+    #[zeroize(skip)]
+    pub kind: EntryKind,
+    #[serde(default)]
     pub title: String,
     #[serde(default)]
     pub username: String,
@@ -67,16 +87,19 @@ pub struct EntryInput {
     #[serde(default)]
     pub custom_fields: Vec<CustomField>,
     #[serde(default)]
+    pub env: String,
+    #[serde(default)]
     pub favorite: bool,
     #[serde(default)]
     pub tags: Vec<String>,
 }
 
-/// List view of an entry, without the password or secret fields.
+/// List view of an entry, without the password, secret fields or env values.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EntrySummary {
     pub id: String,
+    pub kind: EntryKind,
     pub title: String,
     pub username: String,
     pub url: String,
@@ -116,6 +139,7 @@ impl Entry {
     pub fn new(id: String, input: &EntryInput, now: u64) -> Self {
         let mut entry = Self {
             id,
+            kind: EntryKind::Account,
             title: String::new(),
             username: String::new(),
             legacy_email: String::new(),
@@ -123,6 +147,7 @@ impl Entry {
             url: String::new(),
             notes: String::new(),
             custom_fields: Vec::new(),
+            env: String::new(),
             favorite: false,
             tags: Vec::new(),
             created_at: now,
@@ -132,13 +157,28 @@ impl Entry {
         entry
     }
 
+    /// Copies the editable fields. Fields that don't belong to the input's
+    /// kind are cleared, so an env entry never carries a stray password.
     pub fn apply(&mut self, input: &EntryInput, now: u64) {
+        self.kind = input.kind;
         self.title = input.title.clone();
-        self.username = input.username.clone();
-        self.password = input.password.clone();
-        self.url = input.url.clone();
         self.notes = input.notes.clone();
-        self.custom_fields = input.custom_fields.clone();
+        match input.kind {
+            EntryKind::Account => {
+                self.username = input.username.clone();
+                self.password = input.password.clone();
+                self.url = input.url.clone();
+                self.custom_fields = input.custom_fields.clone();
+                self.env.zeroize();
+            }
+            EntryKind::Env => {
+                self.username.zeroize();
+                self.password.zeroize();
+                self.url.zeroize();
+                self.custom_fields.zeroize();
+                self.env = input.env.clone();
+            }
+        }
         self.favorite = input.favorite;
         self.tags = normalize_tags(&input.tags);
         self.updated_at = now;
@@ -169,7 +209,9 @@ impl Entry {
 
     /// True if both entries hold the same login (used to skip duplicates on import).
     pub fn same_login(&self, other: &Entry) -> bool {
-        self.title == other.title
+        self.kind == other.kind
+            && self.env == other.env
+            && self.title == other.title
             && self.username == other.username
             && self.password == other.password
             && self.url == other.url
@@ -178,6 +220,7 @@ impl Entry {
     pub fn summary(&self) -> EntrySummary {
         EntrySummary {
             id: self.id.clone(),
+            kind: self.kind,
             title: self.title.clone(),
             username: self.username.clone(),
             url: self.url.clone(),
@@ -216,5 +259,48 @@ mod tests {
         let json = r#"{"id":"a","title":"A","createdAt":0,"updatedAt":0}"#;
         let entry: Entry = serde_json::from_str(json).unwrap();
         assert!(entry.tags.is_empty());
+    }
+
+    #[test]
+    fn missing_kind_deserializes_as_account() {
+        let json = r#"{"id":"a","title":"A","createdAt":0,"updatedAt":0}"#;
+        let entry: Entry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.kind, EntryKind::Account);
+        assert!(entry.env.is_empty());
+    }
+
+    #[test]
+    fn env_entry_drops_account_fields() {
+        let mut input = EntryInput::default();
+        input.kind = EntryKind::Env;
+        input.title = "API".into();
+        input.password = "stray".into();
+        input.env = "TOKEN=abc
+"
+        .into();
+        let entry = Entry::new("id".into(), &input, 1);
+        assert_eq!(entry.kind, EntryKind::Env);
+        assert_eq!(
+            entry.env,
+            "TOKEN=abc
+"
+        );
+        assert!(entry.password.is_empty());
+
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains(r#""kind":"env""#));
+    }
+
+    #[test]
+    fn env_entries_with_different_values_are_not_duplicates() {
+        let mut input = EntryInput::default();
+        input.kind = EntryKind::Env;
+        input.title = "API".into();
+        input.env = "TOKEN=a".into();
+        let a = Entry::new("a".into(), &input, 1);
+        input.env = "TOKEN=b".into();
+        let b = Entry::new("b".into(), &input, 1);
+        assert!(!a.same_login(&b));
+        assert!(a.same_login(&a.clone()));
     }
 }
